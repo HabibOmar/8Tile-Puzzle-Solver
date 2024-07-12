@@ -1,16 +1,11 @@
 import copy
-import os, sys
-import cv2
 import numpy as np
 import random
-import matplotlib.pyplot as plt
 from tabulate import tabulate
-from IPython.display import clear_output
-
 from PIL import Image, ImageDraw, ImageFont
-from PIL import Image  # if needed more can be importaed
 import imageio
 import time
+import heapq
 
 
 class EightTile():
@@ -20,16 +15,14 @@ class EightTile():
     After shuffling, you can use manual moves using ApplyMove()
     '''
     # class level variables for image and animation generation
-    cellSize = 50  # cell within which a single char will be printed
-    xpadding = 13
-    ypadding = 5
-    fontname = "/Users/hp elitebook83/Desktop/some_fonts/LiberationMono-Bold.ttf"
-    fontsize = 45
-    font = ImageFont.truetype(fontname, fontsize)  # font instace created
+    cellSize = 200  # cell within which a single char will be printed
+    fontname = "calibri"
+    fontsize = 100
+    font = ImageFont.truetype(fontname, fontsize)  # font instance created
     simSteps = 10  # number of intermediate steps in each digit move
 
-    # a class level function
-    def GenerateImage(b, BackColor=(255, 125, 60), ForeColor=(0, 0, 0)):
+    @staticmethod
+    def GenerateImage(b, BackColor=(0, 51, 102), ForeColor=(255, 253, 208)):
         """
         Generates an image given a board numpy array
         0s are simply neglected in the returned image
@@ -37,23 +30,32 @@ class EightTile():
         if b is not a board object but a string, a single char image is generated
         """
         cellSize = EightTile.cellSize
-        xpadding, ypadding = EightTile.xpadding, EightTile.ypadding
         font = EightTile.font
+
+        def draw_centered_text(draw, text, x, y, cellSize, font, ForeColor):
+            # Calculate text bounding box
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            # Calculate positions to center the text
+            text_x = x + (cellSize - text_width) / 2
+            text_y = y + (cellSize - text_height) / 2
+            draw.text((text_x, text_y), text, font=font, fill=ForeColor)
 
         if isinstance(b, str):  # then a single character is expected, no checks
             img = Image.new('RGB', (cellSize, cellSize), BackColor)  # blank image
             imgPen = ImageDraw.Draw(img)  # pen to draw on the blank image
-            imgPen.text((xpadding, ypadding), b, font=font, fill=ForeColor)  # write the char to img
+            draw_centered_text(imgPen, b, 0, 0, cellSize, font, ForeColor)  # write the char to img
         else:  # the whole board is to be processed
             img = Image.new('RGB', (3 * cellSize, 3 * cellSize), BackColor)  # blank image
             imgPen = ImageDraw.Draw(img)  # pen to draw on the blank image
             for row in range(3):  # go row by row
-                y = row * cellSize + ypadding
+                y = row * cellSize
                 for col in range(3):  # then columns
-                    x = col * cellSize + xpadding
+                    x = col * cellSize
                     txt = str(b[row, col]).replace('0', '')
                     # now that position of the current cell is fixed print into it
-                    imgPen.text((x, y), txt, font=font, fill=ForeColor)  # write the character to board image
+                    draw_centered_text(imgPen, txt, x, y, cellSize, font, ForeColor)  # write the character to board image
         # finally return whatever desired
         return np.array(img)  # return image as a numpy array
 
@@ -73,20 +75,18 @@ class EightTile():
         if whether2print:
             print(mess)
 
-    # object level stuff
     def __init__(me):
-        # board is a numpy array
+        # The eight tile board is a numpy array
         me.__board = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 0]])
-        me.__winner = me.__board.copy()  # by default a winning board is givenq
-        # keep track of where 0 is, you can also use np.where, but I like it better this way
-        me.__x, me.__y = 2, 2  # initially it is at the bottom right corner
+        me.__winner = me.__board.copy()  # by default a winning board is given
+        me.__x, me.__y = 2, 2  # keep track of the empty cell
 
-    def shuffle(me, n=1, debugON=False):
+    def shuffle(me, n=10, debugON=False):
         '''
-        randomly moves the empty tile, (i.e. the 0 element) around the gameboard
+        Randomly moves the empty tile, (i.e. the 0 element) around the gameboard
         n times and returns the moves from the initial to the last move
         Input:
-            n: number of shuffles to performe, defaults to 1
+            n: number of shuffles to perform, defaults to 10
         Output:
             a list of n entries [ [y1, x2], [y2, x2], ... , [yn, xn]]
             where [yi, xi] is the relative move of the empty tile at step i
@@ -104,9 +104,9 @@ class EightTile():
         # think of alternative ways of achieving this, without using if conditions
         movez = [[0, 1], [-1, 0, 1], [-1, 0]]
         trace = []
-        dxold, dyold = 0, 0  # past moves are tracked to be avoided, at first no such history
+        dxold, dyold = 0, 0  # to track past moves to avoid oscillations
         for i in range(n):
-            # note that move is along either x or y, but not both!
+            # Note that move is along either x or y, but not both!
             # also no move at all is not accepted
             # we should also avoid the last state, i.e. an opposite move is not good
             dx, dy = 0, 0  # initial move is initialized to no move at all
@@ -123,22 +123,19 @@ class EightTile():
             # finally update positions as well
             me.__x, me.__y = xn, yn
 
-            dxold, dyold = dx, dy  # keep track of old moves to avoid oscillations
-
+            dxold, dyold = dx, dy  # keeping track of old moves to avoid oscillations
         # finally return the sequence of shuffles
-        # note that if negative of trace is applied to the board in reverse order board should reset!
         return trace
 
     def ApplyMove(me, move, generateAnimation=False, debugON=False):
         '''
-        applies a single move to the board and updates it
+        Applies a single move to the board and updates it
         move is a list such that [deltaY, deltaX]
         this is manual usage, so it does not care about the previous moves
         if generateAnimation is set, a list of images will be returned that animates the move
         '''
         dy, dx = move[0], move[1]
         xn, yn = me.__x + dx, me.__y + dy  # record new coordinates
-        img = None
         imList = []
         if (dx ** 2 + dy ** 2 == 1 and 0 <= xn <= 2 and 0 <= yn <= 2):  # then valid
             if generateAnimation:
@@ -157,14 +154,14 @@ class EightTile():
                 xPos = np.linspace(xn * cellSize, me.__x * cellSize, simSteps + 1, dtype=int)
                 yPos = np.linspace(yn * cellSize, me.__y * cellSize, simSteps + 1, dtype=int)
                 Pos = np.vstack((yPos, xPos)).T  # position indices in target image are in rows
-                EightTile.print_debug(f'Position', debugON)
+                EightTile.print_debug(f'{Pos}', debugON)
                 # go over each pos pair to generate new images
                 for p in range(Pos.shape[0]):
                     frm = tempimg.copy()  # generate a template image
                     xi, yi = Pos[p, 1], Pos[p, 0]
                     EightTile.print_debug(f'moving to {yi}:{xi}', debugON)
                     # '''
-                    frm[yi:yi + 50, xi:xi + 50, :] = tempnum  # set image
+                    frm[yi:yi + me.cellSize, xi:xi + me.cellSize, :] = tempnum  # set image
                     EightTile.print_debug(f'frm = {frm.shape}, tempnum = {tempnum.shape}', debugON)
                     # finally add image to list
                     imList.append(frm)
@@ -244,6 +241,9 @@ class BoardStates:
     def f(self):
         return self.g + self.h
 
+    def __lt__(self, other):
+        return self.f < other.f
+
 
 class Solve8:
     def __init__(self):
@@ -269,44 +269,42 @@ class Solve8:
         """
 
         current = BoardStates(tile)
-        self.open.append(current)
+        heapq.heappush(self.open, (current.f, current))
 
-        while True:
-            """
-            This while loop is the heart of the solver. It first checks the first board layout
-            to see if it is a winner, if not it expands to next possible boards that have not been seen before
-
-            """
-            self.open.sort(key=lambda n: n.f)
-
-            if self.open[0].board.isWinner:
-                # if the board is a winner, track back the moves all the way to root node and add them to movez
-                node, movez = self.open[0], []
+        while self.open:
+            _, node = heapq.heappop(self.open)
+            if node.board.isWinner:
+                movez = []
                 while node.parent:
-                    movez.append(node.move)  # adds move from parent to child to movez array
-                    node = node.parent  # moves up the tree to the parent node and loops until parent=None
-                break
-            else:
-                temp = self.open[0]
-                self.seen.add(tuple(map(tuple, temp.board.Board)))
-                self.open.pop(0)
-                childs, mover = temp.new_boards()  # gets all allowed EightTile instances and the moves done to get to it
-
-                for c, kid in enumerate(childs):
-                    current = BoardStates(kid, temp,
-                                          mover[c])  # creates node instances to calculate f function and store move
-                    if not self.array_in_set(current.board.Board):
-                        self.open.append(current)
-
-        return list(reversed(movez))  # returns list of moves required to solve the puzzle
-
+                    movez.append(node.move)
+                    node = node.parent
+                return list(reversed(movez))
+            self.seen.add(tuple(map(tuple, node.board.Board)))
+            childs, mover = node.new_boards()
+            for c, kid in enumerate(childs):
+                current = BoardStates(kid, node, mover[c])
+                if not self.array_in_set(current.board.Board):
+                    heapq.heappush(self.open, (current.f, current))
+        return []
 
 # example usage
-t = EightTile()
-t.shuffle(82)
-print(t.Board)
-start_time = time.time()
-p = Solve8()
-print(len(p.Solve(t)))
-time_duration = time.time() - start_time
-print(time_duration)
+# t = EightTile()
+# t.shuffle(81)
+
+# # Solve the puzzle and get the sequence of moves
+# start_time = time.time()
+# p = Solve8()
+# solution_moves = p.Solve(t)
+# print(len(solution_moves))
+# time_duration = time.time() - start_time
+# print(time_duration)
+
+# # Generate the animation of the solution moves
+# frames = EightTile.GenerateAnimation(t, solution_moves, mName='8tile_puzzle_solution')
+
+# # Save the animation as a GIF file
+# imageio.mimsave('8tile_puzzle_solution.gif', frames, fps=15)
+
+# # Display the GIF animation using PIL
+# img = Image.open('8tile_puzzle_solution.gif')
+# img.show()
