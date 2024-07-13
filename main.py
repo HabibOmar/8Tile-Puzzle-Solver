@@ -15,7 +15,7 @@ class EightTile():
     After shuffling, you can use manual moves using ApplyMove()
     '''
     # class level variables for image and animation generation
-    cellSize = 200  # cell within which a single char will be printed
+    cellSize = 100  # cell within which a single char will be printed
     fontname = "calibri"
     fontsize = 100
     font = ImageFont.truetype(fontname, fontsize)  # font instance created
@@ -288,23 +288,29 @@ class Solve8:
         return []
 
 # example usage
-# t = EightTile()
-# t.shuffle(81)
+t = EightTile()
 
-# # Solve the puzzle and get the sequence of moves
-# start_time = time.time()
-# p = Solve8()
-# solution_moves = p.Solve(t)
-# print(len(solution_moves))
-# time_duration = time.time() - start_time
-# print(time_duration)
+# Shuffle the puzzle (replace 81 with any number of shuffles)
+t.shuffle(81)
 
-# # Generate the animation of the solution moves
-# frames = EightTile.GenerateAnimation(t, solution_moves, mName='8tile_puzzle_solution')
+# Initial board
+initial_board_img = Image.fromarray(t.BoardImage)
+initial_board_img.save('initial_board.png')
 
-# # Save the animation as a GIF file
-# imageio.mimsave('8tile_puzzle_solution.gif', frames, fps=15)
+# Solve the puzzle and get the sequence of moves
+start_time = time.time()
+p = Solve8()
+solution_moves = p.Solve(t)
+print(len(solution_moves))
+time_duration = time.time() - start_time
+print(time_duration)
 
-# # Display the GIF animation using PIL
-# img = Image.open('8tile_puzzle_solution.gif')
-# img.show()
+# Solve the board and generate animation
+frames = EightTile.GenerateAnimation(t, solution_moves, mName='puzzle_solution')
+
+# Solved Board
+solved_board_img = Image.fromarray(t.BoardImage)
+solved_board_img.save('solved_board.png')
+
+# Save the animation as a GIF file
+imageio.mimsave('puzzle_solution.gif', frames, fps=15)
